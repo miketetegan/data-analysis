@@ -7,34 +7,44 @@ helmCharts:
   - name: grafana
     releaseName: lhw-data-analysis
     repo: https://grafana.github.io/helm-charts
-    version: 8.5.12
+    version: 8.5.x
     namespace: monitoring-prod
-    valuesFile: values-prod.yaml
     includeCRDs: true
+    valuesInline:
+      fullnameOverride: lhw-data-analysis
+      # We set this to a "dummy" string to stop the chart from auto-generating 
+      # its own random password secret.
+      admin:
+        existingSecret: "vault-only"
+      persistence:
+        enabled: true
+        size: 10Gi
 
 patches:
-  # 1. Update StorageClass
+  # 1. DELETE the Secret resource entirely from the manifest stream
   - target:
-      kind: PersistentVolumeClaim
+      kind: Secret
       name: lhw-data-analysis
     patch: |-
+      $patch: delete
       apiVersion: v1
-      kind: PersistentVolumeClaim
+      kind: Secret
       metadata:
         name: lhw-data-analysis
-      spec:
-        storageClassName: "local-path"
 
-  # 2. Reverted Deployment (Admin/Password only)
+  # 2. STRIP the 'env' references and inject Vault
   - target:
       kind: Deployment
       name: lhw-data-analysis
     patch: |-
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: lhw-data-analysis
-        annotations:
+      # Remove the entire env block that points to K8s secrets
+      - op: remove
+        path: /spec/template/spec/containers/0/env
+      
+      # Add Vault Annotations to the Pod Template
+      - op: add
+        path: /spec/template/metadata/annotations
+        value:
           vault.hashicorp.com/agent-inject: "true"
           vault.hashicorp.com/role: "grafana-prod-role"
           vault.hashicorp.com/agent-inject-secret-config.env: "secret/data/grafana/config"
@@ -43,36 +53,16 @@ patches:
             export GF_SECURITY_ADMIN_USER="{{ .Data.data.admin_user }}"
             export GF_SECURITY_ADMIN_PASSWORD="{{ .Data.data.admin_password }}"
             {{ end }}
-      spec:
-        template:
-          spec:
-            containers:
-              - name: grafana
-                # This clears out the "vault-only" secret references
-                env: []
-                $patch: replace
-                # This removes the LDAP mount point
-                volumeMounts:
-                  - mountPath: /etc/grafana/grafana.ini
-                    name: config
-                    subPath: grafana.ini
-                  - mountPath: /var/lib/grafana
-                    name: storage
-                $patch: replace
-                # Entrypoint to source Vault secrets
-                command: ["/bin/sh", "-c"]
-                args:
-                  - |
-                    if [ -f /vault/secrets/config.env ]; then
-                      source /vault/secrets/config.env
-                    fi
-                    /run.sh
-            # This removes the "ldap" secret volume requirement
-            volumes:
-              - configMap:
-                  name: lhw-data-analysis-prod
-                name: config
-              - name: storage
-                persistentVolumeClaim:
-                  claimName: lhw-data-analysis-prod
-            $patch: replace
+      
+      # Override Command to source the Vault-injected variables
+      - op: replace
+        path: /spec/template/spec/containers/0/command
+        value: ["/bin/sh", "-c"]
+      - op: replace
+        path: /spec/template/spec/containers/0/args
+        value: 
+          - |
+            if [ -f /vault/secrets/config.env ]; then
+              source /vault/secrets/config.env
+            fi
+            /run.sh
