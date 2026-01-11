@@ -1,9 +1,9 @@
 # Production-ready settings
-replicas: 3
+replicas: 1
 persistence:
   enabled: true
   size: 10Gi
 ingress:
-  enabled: true
+  enabled: false
   hosts:
     - grafana.example.com
