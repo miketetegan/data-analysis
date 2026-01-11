@@ -13,7 +13,7 @@ helmCharts:
     includeCRDs: true
 
 patches:
-  # 1. Ensure StorageClass is correct
+  # 1. Update StorageClass
   - target:
       kind: PersistentVolumeClaim
       name: lhw-data-analysis
@@ -25,7 +25,7 @@ patches:
       spec:
         storageClassName: "local-path"
 
-  # 2. Revert Deployment to basic Vault injection
+  # 2. Reverted Deployment (Admin/Password only)
   - target:
       kind: Deployment
       name: lhw-data-analysis
@@ -35,10 +35,8 @@ patches:
       metadata:
         name: lhw-data-analysis
         annotations:
-          # Enable Vault Injection
           vault.hashicorp.com/agent-inject: "true"
           vault.hashicorp.com/role: "grafana-prod-role"
-          # Inject only the admin credentials
           vault.hashicorp.com/agent-inject-secret-config.env: "secret/data/grafana/config"
           vault.hashicorp.com/agent-inject-template-config.env: |
             {{ with secret "secret/data/grafana/config" }}
@@ -50,10 +48,18 @@ patches:
           spec:
             containers:
               - name: grafana
-                # Clear the Helm-generated env to avoid "vault-only" secret errors
+                # This clears out the "vault-only" secret references
                 env: []
                 $patch: replace
-                # Source the file and start Grafana
+                # This removes the LDAP mount point
+                volumeMounts:
+                  - mountPath: /etc/grafana/grafana.ini
+                    name: config
+                    subPath: grafana.ini
+                  - mountPath: /var/lib/grafana
+                    name: storage
+                $patch: replace
+                # Entrypoint to source Vault secrets
                 command: ["/bin/sh", "-c"]
                 args:
                   - |
@@ -61,3 +67,12 @@ patches:
                       source /vault/secrets/config.env
                     fi
                     /run.sh
+            # This removes the "ldap" secret volume requirement
+            volumes:
+              - configMap:
+                  name: lhw-data-analysis-prod
+                name: config
+              - name: storage
+                persistentVolumeClaim:
+                  claimName: lhw-data-analysis-prod
+            $patch: replace
