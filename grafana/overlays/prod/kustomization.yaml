@@ -13,7 +13,7 @@ helmCharts:
     includeCRDs: true
 
 patches:
-  # 1. Delete the Secret resource
+  # 1. DELETE the Secret
   - target:
       kind: Secret
       name: lhw-data-analysis
@@ -36,7 +36,7 @@ patches:
       spec:
         storageClassName: "local-path"
 
-  # 3. The "Force Override" Deployment Patch
+  # 3. The "Full Override" Deployment Patch
   - target:
       kind: Deployment
       name: lhw-data-analysis
@@ -72,19 +72,11 @@ patches:
       spec:
         template:
           spec:
+            # We tell Kustomize to replace the entire containers list
             containers:
               - name: grafana
-                # FORCE REPLACE the env list to remove 'vault-only' secret references
-                env: []
                 $patch: replace
-                # FORCE REPLACE the mounts to remove 'ldap'
-                volumeMounts:
-                  - mountPath: /etc/grafana/grafana.ini
-                    name: config
-                    subPath: grafana.ini
-                  - mountPath: /var/lib/grafana
-                    name: storage
-                $patch: replace
+                image: docker.io/grafana/grafana:11.3.0
                 command: ["/bin/sh", "-c"]
                 args:
                   - |
@@ -92,12 +84,25 @@ patches:
                       source /vault/secrets/config.env
                     fi
                     /run.sh
-            # FORCE REPLACE the volumes to remove 'ldap' secret volume
+                env:
+                  - name: GF_PATHS_DATA
+                    value: /var/lib/grafana/
+                # ONLY include the mounts that EXIST in the volumes list below
+                volumeMounts:
+                  - mountPath: /etc/grafana/grafana.ini
+                    name: config
+                    subPath: grafana.ini
+                  - mountPath: /var/lib/grafana
+                    name: storage
+                ports:
+                  - containerPort: 3000
+                    name: grafana
+            # We tell Kustomize to replace the entire volumes list
             volumes:
+              - $patch: replace
               - configMap:
                   name: lhw-data-analysis-prod
                 name: config
               - name: storage
                 persistentVolumeClaim:
                   claimName: lhw-data-analysis-prod
-            $patch: replace
