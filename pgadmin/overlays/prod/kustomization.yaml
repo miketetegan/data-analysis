@@ -10,7 +10,7 @@ helmCharts:
     releaseName: lhw-data-analysis
     namespace: monitoring-prod
     # Use the values file located in this same overlay folder
-#    valuesFile: values.yaml
+    valuesFile: values-prod.yaml
 
 # You can still add Kustomize-specific global settings here
 commonLabels:
