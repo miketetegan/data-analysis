@@ -11,7 +11,7 @@ persistence:
   accessMode: ReadWriteOnce
   size: 1Gi
 
-existingSecret: ""
+#existingSecret: ""
 
 # 3. Server Connections (Auto-import)
 # This adds your Postgres instances to the pgAdmin UI automatically
