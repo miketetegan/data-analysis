@@ -13,7 +13,7 @@ helmCharts:
     includeCRDs: true
 
 patches:
-  # PATCH 1: Physically DELETE the Secret from the manifest stream
+  # PATCH 1: Delete the Secret resource so it never exists in the cluster
   - target:
       kind: Secret
       name: lhw-data-analysis
@@ -24,7 +24,7 @@ patches:
       metadata:
         name: lhw-data-analysis
 
-  # PATCH 2: Update StorageClass for your PVC
+  # PATCH 2: Ensure correct StorageClass
   - target:
       kind: PersistentVolumeClaim
       name: lhw-data-analysis
@@ -33,58 +33,75 @@ patches:
         path: /spec/storageClassName
         value: "local-path"
 
-  # PATCH 3: Deployment Patch (Vault Injection + Volume Removal)
+  # PATCH 3: The Deployment Cleanup and Vault Injection
   - target:
       kind: Deployment
       name: lhw-data-analysis
     patch: |-
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: lhw-data-analysis
-        annotations:
-          vault.hashicorp.com/agent-inject: "true"
-          vault.hashicorp.com/role: "grafana-prod-role"
-          vault.hashicorp.com/agent-inject-secret-config.env: "secret/data/grafana/config"
-          vault.hashicorp.com/agent-inject-template-config.env: |
-            {{ with secret "secret/data/grafana/config" }}
-            export GF_SECURITY_ADMIN_USER="{{ .Data.data.admin_user }}"
-            export GF_SECURITY_ADMIN_PASSWORD="{{ .Data.data.admin_password }}"
-            {{ end }}
-          vault.hashicorp.com/agent-inject-secret-ldap.toml: "secret/data/grafana/ldap"
-          vault.hashicorp.com/agent-inject-template-ldap.toml: |
-            {{ with secret "secret/data/grafana/ldap" }}
-            [[servers]]
-            host = "{{ .Data.data.host }}"
-            port = 389
-            use_ssl = false
-            bind_dn = "{{ .Data.data.bind_dn }}"
-            bind_password = "{{ .Data.data.bind_password }}"
-            search_filter = "(cn=%s)"
-            search_base_dns = ["dc=example,dc=org"]
+      # A. Strip the auto-generated env vars (removes secretKeyRef: vault-only)
+      - op: remove
+        path: /spec/template/spec/containers/0/env
 
-            [[servers.group_mappings]]
-            group_dn = "cn=admins,dc=example,dc=org"
-            org_role = "Admin"
-            {{ end }}
-      spec:
-        template:
-          spec:
-            containers:
-              - name: grafana
-                # Strategic Merge: This removes the env and ldap mount
-                env: []
-                $patch: replace
-                volumeMounts:
-                  - name: ldap
-                    $patch: delete
-                command: ["/bin/sh", "-c"]
-                args:
-                  - |
-                    if [ -f /vault/secrets/config.env ]; then
-                      source /vault/secrets/config.env
-                    fi
-                    /run.sh
-            volumes:
-              - name: ldap
-                $patch: delete
+      # B. Strip the auto-generated Volume and Mount (fixes FailedMount error)
+      # We use indices here. Usually, ldap is the 2nd mount and 3rd volume in this chart.
+      # If these fail, we can target them via strategic merge in the next block.
+      - op: remove
+        path: /spec/template/spec/containers/0/volumeMounts/1
+      - op: remove
+        path: /spec/template/spec/volumes/2
+
+      # C. Inject Vault Annotations
+      # Note: '~1' is the escaped character for '/' in JSON patch keys
+      - op: add
+        path: /spec/template/metadata/annotations/vault.hashicorp.com~1agent-inject
+        value: "true"
+      - op: add
+        path: /spec/template/metadata/annotations/vault.hashicorp.com~1role
+        value: "grafana-prod-role"
+      
+      # Admin Credentials Template
+      - op: add
+        path: /spec/template/metadata/annotations/vault.hashicorp.com~1agent-inject-secret-config.env
+        value: "secret/data/grafana/config"
+      - op: add
+        path: /spec/template/metadata/annotations/vault.hashicorp.com~1agent-inject-template-config.env
+        value: |
+          {{ with secret "secret/data/grafana/config" }}
+          export GF_SECURITY_ADMIN_USER="{{ .Data.data.admin_user }}"
+          export GF_SECURITY_ADMIN_PASSWORD="{{ .Data.data.admin_password }}"
+          {{ end }}
+
+      # LDAP.toml Template
+      - op: add
+        path: /spec/template/metadata/annotations/vault.hashicorp.com~1agent-inject-secret-ldap.toml
+        value: "secret/data/grafana/ldap"
+      - op: add
+        path: /spec/template/metadata/annotations/vault.hashicorp.com~1agent-inject-template-ldap.toml
+        value: |
+          {{ with secret "secret/data/grafana/ldap" }}
+          [[servers]]
+          host = "{{ .Data.data.host }}"
+          port = 389
+          use_ssl = false
+          bind_dn = "{{ .Data.data.bind_dn }}"
+          bind_password = "{{ .Data.data.bind_password }}"
+          search_filter = "(cn=%s)"
+          search_base_dns = ["dc=example,dc=org"]
+
+          [[servers.group_mappings]]
+          group_dn = "cn=admins,dc=example,dc=org"
+          org_role = "Admin"
+          {{ end }}
+
+      # D. Override Entrypoint to source the credentials
+      - op: add
+        path: /spec/template/spec/containers/0/command
+        value: ["/bin/sh", "-c"]
+      - op: add
+        path: /spec/template/spec/containers/0/args
+        value:
+          - |
+            if [ -f /vault/secrets/config.env ]; then
+              source /vault/secrets/config.env
+            fi
+            /run.sh

@@ -3,7 +3,6 @@ kind: Kustomization
 
 nameSuffix: -prod
 
-# No need to point to base for the Helm part—define it here for clarity
 helmCharts:
   - name: grafana
     releaseName: lhw-data-analysis
@@ -14,7 +13,7 @@ helmCharts:
     includeCRDs: true
 
 patches:
-  # PATCH 1: Physically DELETE the Secret from the final manifest
+  # PATCH 1: Physically DELETE the Secret from the manifest stream
   - target:
       kind: Secret
       name: lhw-data-analysis
@@ -34,31 +33,24 @@ patches:
         path: /spec/storageClassName
         value: "local-path"
 
-  # PATCH 3: The "Nuclear" Deployment Patch (Vault Injection + Env Removal)
+  # PATCH 3: Deployment Patch (Vault Injection + Volume Removal)
   - target:
       kind: Deployment
       name: lhw-data-analysis
     patch: |-
-      # A. Remove the entire 'env' block to clear K8s Secret dependencies
-      - op: remove
-        path: /spec/template/spec/containers/0/env
-
-      # B. Inject Vault Annotations (for Admin Env AND LDAP File)
-      - op: add
-        path: /spec/template/metadata/annotations
-        value:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: lhw-data-analysis
+        annotations:
           vault.hashicorp.com/agent-inject: "true"
           vault.hashicorp.com/role: "grafana-prod-role"
-          
-          # Admin Credentials Injection
           vault.hashicorp.com/agent-inject-secret-config.env: "secret/data/grafana/config"
           vault.hashicorp.com/agent-inject-template-config.env: |
             {{ with secret "secret/data/grafana/config" }}
             export GF_SECURITY_ADMIN_USER="{{ .Data.data.admin_user }}"
             export GF_SECURITY_ADMIN_PASSWORD="{{ .Data.data.admin_password }}"
             {{ end }}
-
-          # LDAP.toml Injection
           vault.hashicorp.com/agent-inject-secret-ldap.toml: "secret/data/grafana/ldap"
           vault.hashicorp.com/agent-inject-template-ldap.toml: |
             {{ with secret "secret/data/grafana/ldap" }}
@@ -70,21 +62,29 @@ patches:
             bind_password = "{{ .Data.data.bind_password }}"
             search_filter = "(cn=%s)"
             search_base_dns = ["dc=example,dc=org"]
-            
+
             [[servers.group_mappings]]
             group_dn = "cn=admins,dc=example,dc=org"
             org_role = "Admin"
             {{ end }}
-
-      # C. Override Command to source the injected Env file
-      - op: replace
-        path: /spec/template/spec/containers/0/command
-        value: ["/bin/sh", "-c"]
-      - op: replace
-        path: /spec/template/spec/containers/0/args
-        value: 
-          - |
-            if [ -f /vault/secrets/config.env ]; then
-              source /vault/secrets/config.env
-            fi
-            /run.sh
+      spec:
+        template:
+          spec:
+            containers:
+              - name: grafana
+                # Strategic Merge: This removes the env and ldap mount
+                env: []
+                $patch: replace
+                volumeMounts:
+                  - name: ldap
+                    $patch: delete
+                command: ["/bin/sh", "-c"]
+                args:
+                  - |
+                    if [ -f /vault/secrets/config.env ]; then
+                      source /vault/secrets/config.env
+                    fi
+                    /run.sh
+            volumes:
+              - name: ldap
+                $patch: delete
