@@ -12,13 +12,13 @@ helmCharts:
     # This block overrides anything in values-prod.yaml or the default chart
 # We still need to delete the secret created by Helm if you are managing 
 # credentials this way to prevent conflicts.
-patches:
-  - target:
-      kind: Secret
-      name: lhw-data-analysis-pgadmin4
-    patch: |
-      $patch: delete
-      apiVersion: v1
-      kind: Secret
-      metadata:
-        name: lhw-data-analysis-pgadmin4
+#patches:
+#  - target:
+#      kind: Secret
+#      name: lhw-data-analysis-pgadmin4
+#    patch: |
+#      $patch: delete
+#      apiVersion: v1
+#      kind: Secret
+#      metadata:
+#        name: lhw-data-analysis-pgadmin4
