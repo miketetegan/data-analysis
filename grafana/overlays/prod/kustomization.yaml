@@ -13,7 +13,7 @@ helmCharts:
     includeCRDs: true
 
 patches:
-  # 1. Delete the Secret resource so it doesn't exist in the cluster
+  # 1. DELETE the Secret
   - target:
       kind: Secret
       name: lhw-data-analysis
@@ -24,7 +24,7 @@ patches:
       metadata:
         name: lhw-data-analysis
 
-  # 2. Update StorageClass for PVC
+  # 2. Update StorageClass
   - target:
       kind: PersistentVolumeClaim
       name: lhw-data-analysis
@@ -36,7 +36,7 @@ patches:
       spec:
         storageClassName: "local-path"
 
-  # 3. The Deployment Patch (Standard YAML style)
+  # 3. FIX: Deployment Patch (Separated for clarity)
   - target:
       kind: Deployment
       name: lhw-data-analysis
@@ -48,14 +48,12 @@ patches:
         annotations:
           vault.hashicorp.com/agent-inject: "true"
           vault.hashicorp.com/role: "grafana-prod-role"
-          # Admin Secrets Template
           vault.hashicorp.com/agent-inject-secret-config.env: "secret/data/grafana/config"
           vault.hashicorp.com/agent-inject-template-config.env: |
             {{ with secret "secret/data/grafana/config" }}
             export GF_SECURITY_ADMIN_USER="{{ .Data.data.admin_user }}"
             export GF_SECURITY_ADMIN_PASSWORD="{{ .Data.data.admin_password }}"
             {{ end }}
-          # LDAP Secrets Template
           vault.hashicorp.com/agent-inject-secret-ldap.toml: "secret/data/grafana/ldap"
           vault.hashicorp.com/agent-inject-template-ldap.toml: |
             {{ with secret "secret/data/grafana/ldap" }}
@@ -76,18 +74,8 @@ patches:
           spec:
             containers:
               - name: grafana
-                # This replaces the entire env list with empty to kill Secret dependencies
+                # We use the list-replace behavior by defining the lists explicitly
                 env: []
-                $patch: replace
-                # This defines exactly what to mount, effectively removing the 'ldap' secret mount
-                volumeMounts:
-                  - mountPath: /etc/grafana/grafana.ini
-                    name: config
-                    subPath: grafana.ini
-                  - mountPath: /var/lib/grafana
-                    name: storage
-                $patch: replace
-                # Fix the entrypoint
                 command: ["/bin/sh", "-c"]
                 args:
                   - |
@@ -95,7 +83,12 @@ patches:
                       source /vault/secrets/config.env
                     fi
                     /run.sh
-            # This defines exactly what volumes exist, removing the ghost 'ldap' secret volume
+                volumeMounts:
+                  - mountPath: /etc/grafana/grafana.ini
+                    name: config
+                    subPath: grafana.ini
+                  - mountPath: /var/lib/grafana
+                    name: storage
             volumes:
               - configMap:
                   name: lhw-data-analysis-prod
@@ -103,4 +96,3 @@ patches:
               - name: storage
                 persistentVolumeClaim:
                   claimName: lhw-data-analysis-prod
-            $patch: replace
