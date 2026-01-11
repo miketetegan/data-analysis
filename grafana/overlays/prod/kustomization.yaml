@@ -13,7 +13,7 @@ helmCharts:
     includeCRDs: true
 
 patches:
-  # 1. DELETE the Secret
+  # 1. Delete the Secret resource
   - target:
       kind: Secret
       name: lhw-data-analysis
@@ -36,7 +36,7 @@ patches:
       spec:
         storageClassName: "local-path"
 
-  # 3. FIX: Deployment Patch (Separated for clarity)
+  # 3. The "Force Override" Deployment Patch
   - target:
       kind: Deployment
       name: lhw-data-analysis
@@ -74,8 +74,17 @@ patches:
           spec:
             containers:
               - name: grafana
-                # We use the list-replace behavior by defining the lists explicitly
+                # FORCE REPLACE the env list to remove 'vault-only' secret references
                 env: []
+                $patch: replace
+                # FORCE REPLACE the mounts to remove 'ldap'
+                volumeMounts:
+                  - mountPath: /etc/grafana/grafana.ini
+                    name: config
+                    subPath: grafana.ini
+                  - mountPath: /var/lib/grafana
+                    name: storage
+                $patch: replace
                 command: ["/bin/sh", "-c"]
                 args:
                   - |
@@ -83,12 +92,7 @@ patches:
                       source /vault/secrets/config.env
                     fi
                     /run.sh
-                volumeMounts:
-                  - mountPath: /etc/grafana/grafana.ini
-                    name: config
-                    subPath: grafana.ini
-                  - mountPath: /var/lib/grafana
-                    name: storage
+            # FORCE REPLACE the volumes to remove 'ldap' secret volume
             volumes:
               - configMap:
                   name: lhw-data-analysis-prod
@@ -96,3 +100,4 @@ patches:
               - name: storage
                 persistentVolumeClaim:
                   claimName: lhw-data-analysis-prod
+            $patch: replace
