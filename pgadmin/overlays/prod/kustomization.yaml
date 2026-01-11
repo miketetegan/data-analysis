@@ -8,64 +8,21 @@ helmCharts:
     repo: https://helm.runix.net
     version: 1.49.0
     releaseName: lhw-data-analysis
-    namespace: monitoring-prod
     valuesFile: values-prod.yaml
+    # This block overrides anything in values-prod.yaml or the default chart
+    valuesInline:
+      env:
+        password: "TestPassword123!"
+        email: "admin@example.com"
+      # Disabling the enhanced cookie protection to rule out login loops
+      extraConfig:
+        PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: "False"
+      # Ensure no custom command is inherited from previous attempts
+      masterPasswordRequired: false
 
+# We still need to delete the secret created by Helm if you are managing 
+# credentials this way to prevent conflicts.
 patches:
-  - target:
-      kind: Deployment
-      name: lhw-data-analysis-pgadmin4
-    patch: |
-      # 1. Wipe the broken environment list from Helm
-      - op: remove
-        path: /spec/template/spec/containers/0/env
-
-      # 2. Add back clean environment variables
-      - op: add
-        path: /spec/template/spec/containers/0/env
-        value:
-          - name: PGADMIN_DEFAULT_EMAIL
-            value: "admin@example.com"
-          - name: PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION
-            value: "False"
-
-      # 3. Inject Vault Sidecar Annotations
-      - op: add
-        path: /spec/template/metadata/annotations
-        value:
-          vault.hashicorp.com/agent-inject: "true"
-          vault.hashicorp.com/role: "pgadmin-role"
-          vault.hashicorp.com/agent-inject-secret-config: "secret/data/monitoring/pgadmin"
-          vault.hashicorp.com/agent-inject-template-config: |
-            {{- with secret "secret/data/monitoring/pgadmin" -}}
-            export PGADMIN_DEFAULT_PASSWORD="{{ .Data.data.password }}"
-            {{- end -}}
-
-      # 4. Fix ServiceAccount for Vault Auth
-      - op: replace
-        path: /spec/template/spec/automountServiceAccountToken
-        value: true
-
-      # 5. Overwrite the startup command with a robust "clean" parser
-      - op: add
-        path: /spec/template/spec/containers/0/command
-        value:
-          - "/bin/sh"
-          - "-c"
-          - |
-            echo "Waiting for Vault..."
-            while [ ! -f /vault/secrets/config ]; do sleep 1; done
-            
-            # Extract only the value between quotes to avoid literal '"' in the password
-            CLEAN_PASS=$(grep PGADMIN_DEFAULT_PASSWORD /vault/secrets/config | sed -e 's/.*="//' -e 's/"$//')
-            
-            export PGADMIN_DEFAULT_PASSWORD="$CLEAN_PASS"
-            export PGADMIN_DEFAULT_EMAIL="admin@example.com"
-            
-            echo "Secrets loaded for $PGADMIN_DEFAULT_EMAIL. Starting pgAdmin..."
-            exec /entrypoint.sh
-
-  # 6. Delete the plain-text secret created by Helm
   - target:
       kind: Secret
       name: lhw-data-analysis-pgadmin4
