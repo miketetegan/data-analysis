@@ -12,16 +12,18 @@ helmCharts:
     includeCRDs: true
     valuesInline:
       fullnameOverride: lhw-data-analysis
-      # We set this to a "dummy" string to stop the chart from auto-generating 
-      # its own random password secret.
+      # Tricking the chart: Telling it we have an existing secret 
+      # prevents it from auto-generating a new one.
       admin:
-        existingSecret: "vault-only"
-      persistence:
-        enabled: true
-        size: 10Gi
+        existingSecret: "manual-vault-injection" 
+      # Disable the chart's internal env var generation
+      env:
+        GF_SECURITY_ADMIN_USER: null
+        GF_SECURITY_ADMIN_PASSWORD: null
 
+# --- RESOURCE FILTERING ---
+# This ensures that even if Helm renders a Secret, Kustomize discards it.
 patches:
-  # 1. DELETE the Secret resource entirely from the manifest stream
   - target:
       kind: Secret
       name: lhw-data-analysis
@@ -32,16 +34,16 @@ patches:
       metadata:
         name: lhw-data-analysis
 
-  # 2. STRIP the 'env' references and inject Vault
+  # --- DEPLOYMENT CLEANUP & VAULT INJECTION ---
   - target:
       kind: Deployment
       name: lhw-data-analysis
     patch: |-
-      # Remove the entire env block that points to K8s secrets
+      # Remove the env block entirely to clear out the "secret not found" errors
       - op: remove
         path: /spec/template/spec/containers/0/env
       
-      # Add Vault Annotations to the Pod Template
+      # Inject Vault Annotations into the Pod Template
       - op: add
         path: /spec/template/metadata/annotations
         value:
@@ -54,7 +56,7 @@ patches:
             export GF_SECURITY_ADMIN_PASSWORD="{{ .Data.data.admin_password }}"
             {{ end }}
       
-      # Override Command to source the Vault-injected variables
+      # Override Command to source Vault Envs
       - op: replace
         path: /spec/template/spec/containers/0/command
         value: ["/bin/sh", "-c"]
