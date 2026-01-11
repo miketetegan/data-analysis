@@ -55,7 +55,7 @@ patches:
           - |
             while [ ! -f /vault/secrets/config ]; do echo 'waiting for vault...'; sleep 1; done;
             . /vault/secrets/config;
-            /entrypoint.sh
+            exec /entrypoint.sh
 
   # Optional: Delete the secret if Helm still tries to create it
   - target:
