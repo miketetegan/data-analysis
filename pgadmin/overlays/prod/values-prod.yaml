@@ -11,7 +11,7 @@ persistence:
   accessMode: ReadWriteOnce
   size: 1Gi
 
-existingSecret: "none"
+existingSecret: ""
 
 # 3. Server Connections (Auto-import)
 # This adds your Postgres instances to the pgAdmin UI automatically
@@ -38,6 +38,7 @@ env:
   email: chart@domain.com
   password: SuperSecret
 # Using a custom command to source the Vault secrets
+
 containerSecurityContext:
   enabled: true
   runAsUser: 5050 # Standard pgAdmin user
