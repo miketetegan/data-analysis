@@ -33,10 +33,10 @@ serverDefinitions:
 #  - name: PGADMIN_DEFAULT_EMAIL
 #    value: "admin@example.com"
 
-env:
+#env:
   # can be email or nickname
-  email: ""
-  password: ""
+#  email: ""
+#  password: ""
 # Using a custom command to source the Vault secrets
 
 containerSecurityContext:
