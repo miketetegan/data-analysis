@@ -1,6 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
+# The chart is adding 'grafana' to the name, so we match it
 nameSuffix: -prod
 
 helmCharts:
@@ -10,48 +11,55 @@ helmCharts:
     version: 8.5.12
     namespace: monitoring-prod
     includeCRDs: true
+    valuesInline:
+      fullnameOverride: lhw-data-analysis-grafana
+      admin:
+        existingSecret: "manual-vault-injection"
+      ldap:
+        enabled: true
+        existingSecret: "manual-vault-injection"
 
 patches:
-  # 1. DELETE the Secret (Same as your working version)
+  # 1. DELETE the Secret the chart is trying to use
   - target:
       kind: Secret
-      name: lhw-data-analysis
+      name: lhw-data-analysis-grafana
     patch: |-
       $patch: delete
       apiVersion: v1
       kind: Secret
       metadata:
-        name: lhw-data-analysis
+        name: lhw-data-analysis-grafana
 
-  # 2. CLEANUP DEPLOYMENT & INJECT VAULT
+  # 2. FIX THE DEPLOYMENT (Using the correct live name)
   - target:
       kind: Deployment
-      name: lhw-data-analysis
+      name: lhw-data-analysis-grafana
     patch: |-
-      # --- REMOVE GHOSTS ---
+      # Remove the environment variables causing "secret not found"
       - op: remove
         path: /spec/template/spec/containers/0/env
-      
-      # REMOVE the LDAP volume and mount that causes the "Secret Not Found" error
+
+      # REMOVE the LDAP volume and mount so the Pod can actually start
       - op: remove
         path: /spec/template/spec/containers/0/volumeMounts/1
       - op: remove
         path: /spec/template/spec/volumes/1
 
-      # --- INJECT VAULT ---
+      # ADD Vault Annotations (This triggers the sidecar)
       - op: add
         path: /spec/template/metadata/annotations
         value:
           vault.hashicorp.com/agent-inject: "true"
           vault.hashicorp.com/role: "grafana-prod-role"
-          # Admin Passwords
+          # Admin Secrets
           vault.hashicorp.com/agent-inject-secret-config.env: "secret/data/grafana/config"
           vault.hashicorp.com/agent-inject-template-config.env: |
             {{ with secret "secret/data/grafana/config" }}
             export GF_SECURITY_ADMIN_USER="{{ .Data.data.admin_user }}"
             export GF_SECURITY_ADMIN_PASSWORD="{{ .Data.data.admin_password }}"
             {{ end }}
-          # LDAP File
+          # LDAP Secrets
           vault.hashicorp.com/agent-inject-secret-ldap.toml: "secret/data/grafana/ldap"
           vault.hashicorp.com/agent-inject-template-ldap.toml: |
             {{ with secret "secret/data/grafana/ldap" }}
@@ -68,7 +76,7 @@ patches:
             org_role = "Admin"
             {{ end }}
 
-      # --- OVERRIDE COMMAND ---
+      # FIX the entrypoint to source the Vault files
       - op: replace
         path: /spec/template/spec/containers/0/command
         value: ["/bin/sh", "-c"]
@@ -79,7 +87,7 @@ patches:
             if [ -f /vault/secrets/config.env ]; then
               source /vault/secrets/config.env
             fi
-            # Point Grafana to the LDAP file Vault created
+            # Tell Grafana to use the LDAP file from Vault
             export GF_AUTH_LDAP_ENABLED=true
             export GF_AUTH_LDAP_CONFIG_FILE=/vault/secrets/ldap.toml
             /run.sh
