@@ -1,6 +1,7 @@
 # 1. Identity
 serviceAccount:
   create: true
+  automountServiceAccountToken: true
 
 # 2. Persistence
 persistence:
@@ -8,6 +9,8 @@ persistence:
   storageClass: "local-path"
   accessMode: ReadWriteOnce
   size: 1Gi
+
+existingSecret: "none"
 
 # 3. Server Connections (Auto-import)
 # This adds your Postgres instances to the pgAdmin UI automatically
