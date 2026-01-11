@@ -13,6 +13,18 @@ helmCharts:
     valuesFile: values-prod.yaml
     includeCRDs: true
 
+resources: [] 
+patches:
+  - patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: lhw-data-analysis
+    target:
+      kind: Secret
+      name: lhw-data-analysis
+
 patches:
   # PATCH 1: Update StorageClass to local-path
   - target:
