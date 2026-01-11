@@ -8,58 +8,44 @@ helmCharts:
     repo: https://helm.runix.net
     version: 1.49.0
     releaseName: lhw-data-analysis
-    valuesFile: values-prod.yaml
     namespace: monitoring-prod
+    valuesFile: values-prod.yaml
 
 patches:
   - target:
       kind: Deployment
       name: lhw-data-analysis-pgadmin4
     patch: |
-      # 1. Wipe the environment list
-      - op: remove
-        path: /spec/template/spec/containers/0/env
-
-      # 2. Re-add clean environment variables
-      - op: add
-        path: /spec/template/spec/containers/0/env
-        value:
-          - name: PGADMIN_DEFAULT_EMAIL
-            value: "chart@domain.com"
-          - name: PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION
-            value: "False"
-
-      # 3. Inject Vault Sidecar Annotations with a CLEAN template
+      # 1. Add Vault Annotations for file injection
       - op: add
         path: /spec/template/metadata/annotations
         value:
           vault.hashicorp.com/agent-inject: "true"
           vault.hashicorp.com/role: "pgadmin-role"
-          vault.hashicorp.com/agent-inject-secret-password: "secret/data/monitoring/pgadmin"
-          # This template writes ONLY the raw password to the file /vault/secrets/password
-          vault.hashicorp.com/agent-inject-template-password: |
+          vault.hashicorp.com/agent-inject-secret-config: "secret/data/monitoring/pgadmin"
+          vault.hashicorp.com/agent-inject-template-config: |
             {{- with secret "secret/data/monitoring/pgadmin" -}}
-            {{ .Data.data.password }}
+            export PGADMIN_DEFAULT_PASSWORD="{{ .Data.data.password }}"
             {{- end -}}
 
-      # 4. Use a simpler startup command
+      # 2. Ensure ServiceAccount token is mounted for Vault Auth
+      - op: replace
+        path: /spec/template/spec/automountServiceAccountToken
+        value: true
+
+      # 3. Simple Sourcing Command
+      # This waits for the file, sources it into the shell, and execs the app
       - op: add
         path: /spec/template/spec/containers/0/command
         value:
           - "/bin/sh"
           - "-c"
           - |
-            echo "Waiting for Vault..."
-            while [ ! -f /vault/secrets/password ]; do sleep 1; done
-            
-            # Read the raw password directly from the file
-            export PGADMIN_DEFAULT_PASSWORD=$(cat /vault/secrets/password)
-            export PGADMIN_DEFAULT_EMAIL="chart@domain.com"
-            
-            echo "Secrets loaded. Starting pgAdmin..."
+            while [ ! -f /vault/secrets/config ]; do echo 'waiting for vault...'; sleep 1; done;
+            . /vault/secrets/config;
             exec /entrypoint.sh
 
-  # 5. Ensure the helm-generated secret is deleted
+  # 4. Clean up the Helm-generated secret
   - target:
       kind: Secret
       name: lhw-data-analysis-pgadmin4
