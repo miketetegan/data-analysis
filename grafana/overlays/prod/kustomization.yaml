@@ -13,7 +13,7 @@ helmCharts:
     includeCRDs: true
 
 patches:
-  # PATCH 1: Physically DELETE the Secret from the manifest stream
+  # 1. Delete the Secret resource so it doesn't exist in the cluster
   - target:
       kind: Secret
       name: lhw-data-analysis
@@ -24,16 +24,19 @@ patches:
       metadata:
         name: lhw-data-analysis
 
-  # PATCH 2: Ensure correct StorageClass
+  # 2. Update StorageClass for PVC
   - target:
       kind: PersistentVolumeClaim
       name: lhw-data-analysis
     patch: |-
-      - op: replace
-        path: /spec/storageClassName
-        value: "local-path"
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: lhw-data-analysis
+      spec:
+        storageClassName: "local-path"
 
-  # PATCH 3: Deployment Patch (Vault Injection + Volume Removal)
+  # 3. The Deployment Patch (Standard YAML style)
   - target:
       kind: Deployment
       name: lhw-data-analysis
@@ -43,15 +46,16 @@ patches:
       metadata:
         name: lhw-data-analysis
         annotations:
-          # Adding Vault annotations to the metadata level
           vault.hashicorp.com/agent-inject: "true"
           vault.hashicorp.com/role: "grafana-prod-role"
+          # Admin Secrets Template
           vault.hashicorp.com/agent-inject-secret-config.env: "secret/data/grafana/config"
           vault.hashicorp.com/agent-inject-template-config.env: |
             {{ with secret "secret/data/grafana/config" }}
             export GF_SECURITY_ADMIN_USER="{{ .Data.data.admin_user }}"
             export GF_SECURITY_ADMIN_PASSWORD="{{ .Data.data.admin_password }}"
             {{ end }}
+          # LDAP Secrets Template
           vault.hashicorp.com/agent-inject-secret-ldap.toml: "secret/data/grafana/ldap"
           vault.hashicorp.com/agent-inject-template-ldap.toml: |
             {{ with secret "secret/data/grafana/ldap" }}
@@ -63,7 +67,6 @@ patches:
             bind_password = "{{ .Data.data.bind_password }}"
             search_filter = "(cn=%s)"
             search_base_dns = ["dc=example,dc=org"]
-
             [[servers.group_mappings]]
             group_dn = "cn=admins,dc=example,dc=org"
             org_role = "Admin"
@@ -73,14 +76,18 @@ patches:
           spec:
             containers:
               - name: grafana
-                # Remove the environment block entirely
+                # This replaces the entire env list with empty to kill Secret dependencies
                 env: []
                 $patch: replace
-                # REMOVE the LDAP mount point
+                # This defines exactly what to mount, effectively removing the 'ldap' secret mount
                 volumeMounts:
-                  - name: ldap
-                    $patch: delete
-                # Ensure the entrypoint sources the Vault secrets
+                  - mountPath: /etc/grafana/grafana.ini
+                    name: config
+                    subPath: grafana.ini
+                  - mountPath: /var/lib/grafana
+                    name: storage
+                $patch: replace
+                # Fix the entrypoint
                 command: ["/bin/sh", "-c"]
                 args:
                   - |
@@ -88,7 +95,12 @@ patches:
                       source /vault/secrets/config.env
                     fi
                     /run.sh
-            # REMOVE the ghost LDAP volume definition
+            # This defines exactly what volumes exist, removing the ghost 'ldap' secret volume
             volumes:
-              - name: ldap
-                $patch: delete
+              - configMap:
+                  name: lhw-data-analysis-prod
+                name: config
+              - name: storage
+                persistentVolumeClaim:
+                  claimName: lhw-data-analysis-prod
+            $patch: replace
