@@ -29,10 +29,14 @@ serverDefinitions:
 
 # 4. Entrypoint tweak for Vault
 # We must source the secrets injected by Vault before starting pgAdmin
-extraEnv:
-  - name: PGADMIN_DEFAULT_EMAIL
-    value: "admin@example.com"
+#extraEnv:
+#  - name: PGADMIN_DEFAULT_EMAIL
+#    value: "admin@example.com"
 
+env:
+  # can be email or nickname
+  email: chart@domain.com
+  password: SuperSecret
 # Using a custom command to source the Vault secrets
 containerSecurityContext:
   enabled: true

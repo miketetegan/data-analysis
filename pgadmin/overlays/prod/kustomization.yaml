@@ -10,16 +10,6 @@ helmCharts:
     releaseName: lhw-data-analysis
     valuesFile: values-prod.yaml
     # This block overrides anything in values-prod.yaml or the default chart
-    valuesInline:
-      env:
-        password: "TestPassword123!"
-        email: "admin@example.com"
-      # Disabling the enhanced cookie protection to rule out login loops
-      extraConfig:
-        PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: "False"
-      # Ensure no custom command is inherited from previous attempts
-      masterPasswordRequired: false
-
 # We still need to delete the secret created by Helm if you are managing 
 # credentials this way to prevent conflicts.
 patches:
