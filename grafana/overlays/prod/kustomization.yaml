@@ -31,7 +31,7 @@ patches:
       apiVersion: apps/v1
       kind: Deployment
       metadata:
-        name: prod-grafana
+        name: lhw-data-analysis
         annotations:
           vault.hashicorp.com/agent-inject: "true"
           vault.hashicorp.com/role: "grafana-prod-role"
