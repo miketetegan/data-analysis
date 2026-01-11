@@ -14,3 +14,8 @@ admin:
   existingSecret: "vault-only" # Some charts use this to skip secret creation
   password: ""           # Leave empty
   user: ""               # Leave empty
+
+ldap:
+  enabled: true
+  allowSignUp: true
+  config_file: "/vault/secrets/ldap.toml"
