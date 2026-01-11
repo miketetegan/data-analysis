@@ -11,13 +11,6 @@ helmCharts:
     version: 8.5.12
     namespace: monitoring-prod
     includeCRDs: true
-    valuesInline:
-      fullnameOverride: lhw-data-analysis-grafana
-      admin:
-        existingSecret: "manual-vault-injection"
-      ldap:
-        enabled: true
-        existingSecret: "manual-vault-injection"
 
 patches:
   # 1. DELETE the Secret the chart is trying to use

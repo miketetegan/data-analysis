@@ -9,12 +9,13 @@ ingress:
     - grafana.example.com
 
 # Tell Helm NOT to create or use a secret for the admin password
+
+#      fullnameOverride: lhw-data-analysis-grafana
 admin:
-  existingSecret: "vault-only" # Some charts use this to skip secret creation
-  password: ""           # Leave empty
-  user: ""               # Leave empty
+  existingSecret: "manual-vault-injection"
 
 ldap:
   enabled: true
+  existingSecret: "manual-vault-injection"
   allowSignUp: true
   config_file: "/vault/secrets/ldap.toml"
