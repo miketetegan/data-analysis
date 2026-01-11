@@ -22,7 +22,7 @@ patches:
         path: /spec/template/spec/containers/0/env
         value:
           - name: PGADMIN_DEFAULT_EMAIL
-            value: "admin@example.com"
+            value: "chart@domain.com"
           - name: PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION
             value: "False"
 
