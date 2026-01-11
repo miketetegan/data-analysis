@@ -16,70 +16,68 @@ patches:
       kind: Deployment
       name: lhw-data-analysis-pgadmin4
     patch: |
-      # 1. Clear the env list to avoid "Secret not found" errors
+      # 1. Clear the default env list to fix "Secret not found"
       - op: replace
         path: /spec/template/spec/containers/0/env
         value:
           - name: PGADMIN_DEFAULT_EMAIL
             value: "chart@domain.com"
 
-      # 2. Vault Annotations for Password AND AD Config
+      # 2. Vault Annotations (Password + AD Config)
       - op: add
         path: /spec/template/metadata/annotations
         value:
           vault.hashicorp.com/agent-inject: "true"
           vault.hashicorp.com/role: "pgadmin-role"
           
-          # Template 1: For the password (sourced in shell)
+          # Template for shell sourcing (Password)
           vault.hashicorp.com/agent-inject-secret-config: "secret/data/monitoring/pgadmin"
           vault.hashicorp.com/agent-inject-template-config: |
             {{- with secret "secret/data/monitoring/pgadmin" -}}
             export PGADMIN_DEFAULT_PASSWORD="{{ .Data.data.password }}"
             {{- end -}}
           
-          # Template 2: For the AD Python config file
+          # Template for Python config (AD/LDAP)
           vault.hashicorp.com/agent-inject-secret-ad-config: "secret/data/monitoring/pgadmin"
           vault.hashicorp.com/agent-inject-template-ad-config: |
             {{- with secret "secret/data/monitoring/pgadmin" -}}
-            import os
             AUTHENTICATION_SOURCES = ['ldap', 'internal']
-            LDAP_SERVER_URI = 'ldap://your-ad-server-address:389'
+            LDAP_SERVER_URI = '{{ .Data.data.ad_server }}'
             LDAP_BIND_USER = '{{ .Data.data.ad_bind_user }}'
             LDAP_BIND_PASSWORD = '{{ .Data.data.ad_bind_password }}'
-            LDAP_BASE_DN = 'OU=Users,DC=example,DC=com'
+            LDAP_BASE_DN = '{{ .Data.data.ad_base_dn }}'
             LDAP_USERNAME_ATTRIBUTE = 'sAMAccountName'
             LDAP_SEARCH_FILTER = '(objectclass=user)'
-            # Optional: Map AD groups to pgAdmin roles
-            # LDAP_AD_TEAM_AD_MAPPING = [{"team": "DB_Admins", "role": "admin"}]
+            LDAP_AUTO_CREATE_USER = True
             {{- end -}}
 
-      # 3. Ensure ServiceAccount token is mounted for Vault
+      # 3. Enable ServiceAccount for Vault Auth
       - op: replace
         path: /spec/template/spec/automountServiceAccountToken
         value: true
 
-      # 4. Updated Command to source the password and link the AD file
+      # 4. Startup Command with Permission Fix
       - op: add
         path: /spec/template/spec/containers/0/command
         value:
           - "/bin/sh"
           - "-c"
           - |
-            # Wait for both Vault files to appear
+            # Wait for Vault injection
             while [ ! -f /vault/secrets/config ] || [ ! -f /vault/secrets/ad-config ]; do 
               echo 'waiting for vault...'; sleep 1; 
             done;
             
-            # Source password for the initial admin account
+            # Source password for local admin
             . /vault/secrets/config;
             
-            # Link the AD Python config to the pgAdmin root directory
-            ln -sf /vault/secrets/ad-config /pgadmin4/config_local.py
+            # Link to /var/lib/pgadmin/ because /pgadmin4/ is read-only (Root)
+            ln -sf /vault/secrets/ad-config /var/lib/pgadmin/config_local.py
             
-            echo "Secrets loaded and AD config linked. Starting pgAdmin..."
+            echo "AD Config linked to writable directory. Starting..."
             exec /entrypoint.sh
 
-  # 5. Delete the auto-generated Helm secret
+  # 5. Clean up the Helm-generated secret
   - target:
       kind: Secret
       name: lhw-data-analysis-pgadmin4
