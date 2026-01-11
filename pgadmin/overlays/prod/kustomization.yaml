@@ -16,28 +16,28 @@ patches:
       kind: Deployment
       name: lhw-data-analysis-pgadmin4
     patch: |
-      # 1. Clear the default env list to fix "Secret not found"
+      # 1. Add PYTHONPATH so Python looks in the writable data dir for the config
       - op: replace
         path: /spec/template/spec/containers/0/env
         value:
           - name: PGADMIN_DEFAULT_EMAIL
             value: "chart@domain.com"
+          - name: PYTHONPATH
+            value: "/var/lib/pgadmin"
 
-      # 2. Vault Annotations (Password + AD Config)
+      # 2. Vault Annotations
       - op: add
         path: /spec/template/metadata/annotations
         value:
           vault.hashicorp.com/agent-inject: "true"
           vault.hashicorp.com/role: "pgadmin-role"
           
-          # Template for shell sourcing (Password)
           vault.hashicorp.com/agent-inject-secret-config: "secret/data/monitoring/pgadmin"
           vault.hashicorp.com/agent-inject-template-config: |
             {{- with secret "secret/data/monitoring/pgadmin" -}}
             export PGADMIN_DEFAULT_PASSWORD="{{ .Data.data.password }}"
             {{- end -}}
           
-          # Template for Python config (AD/LDAP)
           vault.hashicorp.com/agent-inject-secret-ad-config: "secret/data/monitoring/pgadmin"
           vault.hashicorp.com/agent-inject-template-ad-config: |
             {{- with secret "secret/data/monitoring/pgadmin" -}}
@@ -51,33 +51,28 @@ patches:
             LDAP_AUTO_CREATE_USER = True
             {{- end -}}
 
-      # 3. Enable ServiceAccount for Vault Auth
+      # 3. Enable ServiceAccount
       - op: replace
         path: /spec/template/spec/automountServiceAccountToken
         value: true
 
-      # 4. Startup Command with Permission Fix
+      # 4. Startup Command
       - op: add
         path: /spec/template/spec/containers/0/command
         value:
           - "/bin/sh"
           - "-c"
           - |
-            # Wait for Vault injection
             while [ ! -f /vault/secrets/config ] || [ ! -f /vault/secrets/ad-config ]; do 
-              echo 'waiting for vault...'; sleep 1; 
+              sleep 1; 
             done;
-            
-            # Source password for local admin
             . /vault/secrets/config;
             
-            # Link to /var/lib/pgadmin/ because /pgadmin4/ is read-only (Root)
+            # Place the file in the writable directory
             ln -sf /vault/secrets/ad-config /var/lib/pgadmin/config_local.py
             
-            echo "AD Config linked to writable directory. Starting..."
             exec /entrypoint.sh
 
-  # 5. Clean up the Helm-generated secret
   - target:
       kind: Secret
       name: lhw-data-analysis-pgadmin4
