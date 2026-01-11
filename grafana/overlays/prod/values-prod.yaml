@@ -1,4 +1,5 @@
 # Production-ready settings
+fullnameOverride: lhw-data-analysis
 replicas: 1
 persistence:
   enabled: true
