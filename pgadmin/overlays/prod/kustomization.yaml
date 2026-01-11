@@ -1,7 +1,9 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
+# Keep the nameSuffix if you want the -prod name
 nameSuffix: -prod
+namespace: monitoring-prod
 
 helmCharts:
   - name: pgadmin4
@@ -12,18 +14,7 @@ helmCharts:
     valuesFile: values-prod.yaml
 
 patches:
-  # 1. DELETE the Secret the chart generated
-  - target:
-      kind: Secret
-      name: lhw-data-analysis-pgadmin4
-    patch: |
-      $patch: delete
-      apiVersion: v1
-      kind: Secret
-      metadata:
-        name: lhw-data-analysis-pgadmin4
-
-  # 2. FIX the Deployment to remove the broken reference
+  # 1. Surgical Patch for Vault and Env
   - target:
       kind: Deployment
       name: lhw-data-analysis-pgadmin4
@@ -43,17 +34,18 @@ patches:
                 {{- with secret "secret/data/monitoring/pgadmin" -}}
                 export PGADMIN_DEFAULT_PASSWORD="{{ .Data.data.password }}"
                 {{- end -}}
+            # We add the env: prod label ONLY to the pod template, 
+            # NOT the selector, to avoid the immutable field error.
+            labels:
+              env: prod
           spec:
             automountServiceAccountToken: true
             containers:
               - name: pgadmin4
-                # This 'env' block REPLACES the Helm-generated env list for this container
-                # so the broken 'valueFrom' is completely gone.
+                # We override the env to clear the broken secretKeyRef
                 env:
                   - name: PGADMIN_DEFAULT_EMAIL
                     value: "admin@example.com"
-                  - name: PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION
-                    value: "False"
                 command:
                   - "/bin/sh"
                   - "-c"
@@ -61,3 +53,14 @@ patches:
                     while [ ! -f /vault/secrets/config ]; do echo 'waiting for vault...'; sleep 1; done;
                     . /vault/secrets/config;
                     /entrypoint.sh
+
+  # 2. Delete the secret as you wanted
+  - target:
+      kind: Secret
+      name: lhw-data-analysis-pgadmin4
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: lhw-data-analysis-pgadmin4
