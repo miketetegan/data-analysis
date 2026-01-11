@@ -1,7 +1,7 @@
 # 1. Identity
 serviceAccount:
   create: true
-  serviceaccount: lhw-data-analysis-pgadmin
+#  serviceaccount: lhw-data-analysis-pgadmin
   automountServiceAccountToken: true
 
 # 2. Persistence
