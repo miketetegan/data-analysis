@@ -1,0 +1,13 @@
+# deploy/overlays/test/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+namespace: monitoring-test
+nameSuffix: -test
+
+helmCharts:
+  - name: grafana
+    valuesFile: values-test.yaml
