@@ -9,6 +9,7 @@ helmCharts:
     version: 1.49.0
     releaseName: lhw-data-analysis
     valuesFile: values-prod.yaml
+    namespace: monitoring-prod
     # This block overrides anything in values-prod.yaml or the default chart
 # We still need to delete the secret created by Helm if you are managing 
 # credentials this way to prevent conflicts.
