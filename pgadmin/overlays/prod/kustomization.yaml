@@ -14,47 +14,50 @@ helmCharts:
     valuesFile: values-prod.yaml
 
 patches:
-  # 1. Surgical Patch for Vault and Env
   - target:
       kind: Deployment
       name: lhw-data-analysis-pgadmin4
     patch: |
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: lhw-data-analysis-pgadmin4
-      spec:
-        template:
-          metadata:
-            annotations:
-              vault.hashicorp.com/agent-inject: "true"
-              vault.hashicorp.com/role: "pgadmin-role"
-              vault.hashicorp.com/agent-inject-secret-config: "secret/data/monitoring/pgadmin"
-              vault.hashicorp.com/agent-inject-template-config: |
-                {{- with secret "secret/data/monitoring/pgadmin" -}}
-                export PGADMIN_DEFAULT_PASSWORD="{{ .Data.data.password }}"
-                {{- end -}}
-            # We add the env: prod label ONLY to the pod template, 
-            # NOT the selector, to avoid the immutable field error.
-            labels:
-              env: prod
-          spec:
-            automountServiceAccountToken: true
-            containers:
-              - name: pgadmin4
-                # We override the env to clear the broken secretKeyRef
-                env:
-                  - name: PGADMIN_DEFAULT_EMAIL
-                    value: "admin@example.com"
-                command:
-                  - "/bin/sh"
-                  - "-c"
-                  - |
-                    while [ ! -f /vault/secrets/config ]; do echo 'waiting for vault...'; sleep 1; done;
-                    . /vault/secrets/config;
-                    /entrypoint.sh
+      # 1. Clear the broken env list entirely
+      - op: remove
+        path: /spec/template/spec/containers/0/env
 
-  # 2. Delete the secret as you wanted
+      # 2. Add back only what we need
+      - op: add
+        path: /spec/template/spec/containers/0/env
+        value:
+          - name: PGADMIN_DEFAULT_EMAIL
+            value: "admin@example.com"
+
+      # 3. Inject Vault Annotations into the Pod Template
+      - op: add
+        path: /spec/template/metadata/annotations
+        value:
+          vault.hashicorp.com/agent-inject: "true"
+          vault.hashicorp.com/role: "pgadmin-role"
+          vault.hashicorp.com/agent-inject-secret-config: "secret/data/monitoring/pgadmin"
+          vault.hashicorp.com/agent-inject-template-config: |
+            {{- with secret "secret/data/monitoring/pgadmin" -}}
+            export PGADMIN_DEFAULT_PASSWORD="{{ .Data.data.password }}"
+            {{- end -}}
+
+      # 4. Force ServiceAccount token mount for Vault sidecar
+      - op: replace
+        path: /spec/template/spec/automountServiceAccountToken
+        value: true
+
+      # 5. Inject the startup command to source Vault secrets
+      - op: add
+        path: /spec/template/spec/containers/0/command
+        value:
+          - "/bin/sh"
+          - "-c"
+          - |
+            while [ ! -f /vault/secrets/config ]; do echo 'waiting for vault...'; sleep 1; done;
+            . /vault/secrets/config;
+            /entrypoint.sh
+
+  # Optional: Delete the secret if Helm still tries to create it
   - target:
       kind: Secret
       name: lhw-data-analysis-pgadmin4
