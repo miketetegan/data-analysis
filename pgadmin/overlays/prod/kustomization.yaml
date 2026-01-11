@@ -2,6 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 nameSuffix: -prod
+namespace: monitoring-prod
 
 helmCharts:
   - name: pgadmin4
@@ -16,7 +17,16 @@ patches:
       kind: Deployment
       name: lhw-data-analysis-pgadmin4
     patch: |
-      # 1. Add Vault Annotations for file injection
+      # 1. This REPLACES the entire env list, killing the broken secretKeyRef
+      - op: replace
+        path: /spec/template/spec/containers/0/env
+        value:
+          - name: PGADMIN_DEFAULT_EMAIL
+            value: "admin@example.com"
+          - name: PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION
+            value: "False"
+
+      # 2. Vault Annotations for the "Old Method"
       - op: add
         path: /spec/template/metadata/annotations
         value:
@@ -28,13 +38,12 @@ patches:
             export PGADMIN_DEFAULT_PASSWORD="{{ .Data.data.password }}"
             {{- end -}}
 
-      # 2. Ensure ServiceAccount token is mounted for Vault Auth
+      # 3. Fix ServiceAccount Auth
       - op: replace
         path: /spec/template/spec/automountServiceAccountToken
         value: true
 
-      # 3. Simple Sourcing Command
-      # This waits for the file, sources it into the shell, and execs the app
+      # 4. Your "Old Method" Sourcing Command
       - op: add
         path: /spec/template/spec/containers/0/command
         value:
@@ -45,7 +54,7 @@ patches:
             . /vault/secrets/config;
             exec /entrypoint.sh
 
-  # 4. Clean up the Helm-generated secret
+  # 5. Delete the Secret object so it is not in the cluster
   - target:
       kind: Secret
       name: lhw-data-analysis-pgadmin4
