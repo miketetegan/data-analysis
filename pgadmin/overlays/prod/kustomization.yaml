@@ -9,14 +9,21 @@ helmCharts:
     version: 1.49.0
     releaseName: lhw-data-analysis
     namespace: monitoring-prod
-    # Use the values file located in this same overlay folder
     valuesFile: values-prod.yaml
 
-# You can still add Kustomize-specific global settings here
-commonLabels:
-  env: prod
-
 patches:
+  # 1. DELETE the Secret the chart generated
+  - target:
+      kind: Secret
+      name: lhw-data-analysis-pgadmin4
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: lhw-data-analysis-pgadmin4
+
+  # 2. FIX the Deployment to remove the broken reference
   - target:
       kind: Deployment
       name: lhw-data-analysis-pgadmin4
@@ -37,13 +44,20 @@ patches:
                 export PGADMIN_DEFAULT_PASSWORD="{{ .Data.data.password }}"
                 {{- end -}}
           spec:
+            automountServiceAccountToken: true
             containers:
               - name: pgadmin4
-                # This overrides the entrypoint to source the Vault file
-                command: 
+                # This 'env' block REPLACES the Helm-generated env list for this container
+                # so the broken 'valueFrom' is completely gone.
+                env:
+                  - name: PGADMIN_DEFAULT_EMAIL
+                    value: "admin@example.com"
+                  - name: PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION
+                    value: "False"
+                command:
                   - "/bin/sh"
                   - "-c"
                   - |
-                    while [ ! -f /vault/secrets/config ]; do echo 'waiting for vault secrets...'; sleep 1; done;
+                    while [ ! -f /vault/secrets/config ]; do echo 'waiting for vault...'; sleep 1; done;
                     . /vault/secrets/config;
                     /entrypoint.sh
