@@ -11,6 +11,7 @@ helmCharts:
     version: 8.5.12
     namespace: monitoring-prod
     includeCRDs: true
+    valuesFile: values-prod.yaml
 
 patches:
   # 1. DELETE the Secret the chart is trying to use
