@@ -11,6 +11,6 @@ ingress:
 
 # Tell Helm NOT to create or use a secret for the admin password
 admin:
-  existingSecret: "none" # Some charts use this to skip secret creation
+  existingSecret: "" # Some charts use this to skip secret creation
   password: ""           # Leave empty
   user: ""               # Leave empty
