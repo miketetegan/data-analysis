@@ -1,13 +1,14 @@
-# deploy/overlays/test/kustomization.yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-resources:
-  - ../../base
-
-namespace: monitoring-prod
 nameSuffix: -prod
 
+# No need to point to base for the Helm part—define it here for clarity
 helmCharts:
   - name: grafana
+    releaseName: prod-grafana
+    repo: https://grafana.github.io/helm-charts
+    version: 8.5.x
+    namespace: monitoring-prod
     valuesFile: values-prod.yaml
+    includeCRDs: true
