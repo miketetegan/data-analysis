@@ -13,18 +13,7 @@ helmCharts:
     includeCRDs: true
 
 patches:
-  # 1. DELETE the Secret
-  - target:
-      kind: Secret
-      name: lhw-data-analysis
-    patch: |-
-      $patch: delete
-      apiVersion: v1
-      kind: Secret
-      metadata:
-        name: lhw-data-analysis
-
-  # 2. Update StorageClass
+  # 1. Ensure StorageClass is correct
   - target:
       kind: PersistentVolumeClaim
       name: lhw-data-analysis
@@ -36,7 +25,7 @@ patches:
       spec:
         storageClassName: "local-path"
 
-  # 3. The "Full Override" Deployment Patch
+  # 2. Revert Deployment to basic Vault injection
   - target:
       kind: Deployment
       name: lhw-data-analysis
@@ -46,37 +35,25 @@ patches:
       metadata:
         name: lhw-data-analysis
         annotations:
+          # Enable Vault Injection
           vault.hashicorp.com/agent-inject: "true"
           vault.hashicorp.com/role: "grafana-prod-role"
+          # Inject only the admin credentials
           vault.hashicorp.com/agent-inject-secret-config.env: "secret/data/grafana/config"
           vault.hashicorp.com/agent-inject-template-config.env: |
             {{ with secret "secret/data/grafana/config" }}
             export GF_SECURITY_ADMIN_USER="{{ .Data.data.admin_user }}"
             export GF_SECURITY_ADMIN_PASSWORD="{{ .Data.data.admin_password }}"
             {{ end }}
-          vault.hashicorp.com/agent-inject-secret-ldap.toml: "secret/data/grafana/ldap"
-          vault.hashicorp.com/agent-inject-template-ldap.toml: |
-            {{ with secret "secret/data/grafana/ldap" }}
-            [[servers]]
-            host = "{{ .Data.data.host }}"
-            port = 389
-            use_ssl = false
-            bind_dn = "{{ .Data.data.bind_dn }}"
-            bind_password = "{{ .Data.data.bind_password }}"
-            search_filter = "(cn=%s)"
-            search_base_dns = ["dc=example,dc=org"]
-            [[servers.group_mappings]]
-            group_dn = "cn=admins,dc=example,dc=org"
-            org_role = "Admin"
-            {{ end }}
       spec:
         template:
           spec:
-            # We tell Kustomize to replace the entire containers list
             containers:
               - name: grafana
+                # Clear the Helm-generated env to avoid "vault-only" secret errors
+                env: []
                 $patch: replace
-                image: docker.io/grafana/grafana:11.3.0
+                # Source the file and start Grafana
                 command: ["/bin/sh", "-c"]
                 args:
                   - |
@@ -84,25 +61,3 @@ patches:
                       source /vault/secrets/config.env
                     fi
                     /run.sh
-                env:
-                  - name: GF_PATHS_DATA
-                    value: /var/lib/grafana/
-                # ONLY include the mounts that EXIST in the volumes list below
-                volumeMounts:
-                  - mountPath: /etc/grafana/grafana.ini
-                    name: config
-                    subPath: grafana.ini
-                  - mountPath: /var/lib/grafana
-                    name: storage
-                ports:
-                  - containerPort: 3000
-                    name: grafana
-            # We tell Kustomize to replace the entire volumes list
-            volumes:
-              - $patch: replace
-              - configMap:
-                  name: lhw-data-analysis-prod
-                name: config
-              - name: storage
-                persistentVolumeClaim:
-                  claimName: lhw-data-analysis-prod
