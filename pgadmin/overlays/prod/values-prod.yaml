@@ -35,8 +35,8 @@ serverDefinitions:
 
 env:
   # can be email or nickname
-  email: chart@domain.com
-  password: SuperSecret
+  email: ""
+  password: ""
 # Using a custom command to source the Vault secrets
 
 containerSecurityContext:

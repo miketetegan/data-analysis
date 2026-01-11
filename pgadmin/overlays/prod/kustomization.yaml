@@ -10,16 +10,62 @@ helmCharts:
     releaseName: lhw-data-analysis
     valuesFile: values-prod.yaml
     namespace: monitoring-prod
-    # This block overrides anything in values-prod.yaml or the default chart
-# We still need to delete the secret created by Helm if you are managing 
-# credentials this way to prevent conflicts.
-#patches:
-#  - target:
-#      kind: Secret
-#      name: lhw-data-analysis-pgadmin4
-#    patch: |
-#      $patch: delete
-#      apiVersion: v1
-#      kind: Secret
-#      metadata:
-#        name: lhw-data-analysis-pgadmin4
+
+patches:
+  - target:
+      kind: Deployment
+      name: lhw-data-analysis-pgadmin4
+    patch: |
+      # 1. Wipe the environment list
+      - op: remove
+        path: /spec/template/spec/containers/0/env
+
+      # 2. Re-add clean environment variables
+      - op: add
+        path: /spec/template/spec/containers/0/env
+        value:
+          - name: PGADMIN_DEFAULT_EMAIL
+            value: "chart@domain.com"
+          - name: PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION
+            value: "False"
+
+      # 3. Inject Vault Sidecar Annotations with a CLEAN template
+      - op: add
+        path: /spec/template/metadata/annotations
+        value:
+          vault.hashicorp.com/agent-inject: "true"
+          vault.hashicorp.com/role: "pgadmin-role"
+          vault.hashicorp.com/agent-inject-secret-password: "secret/data/monitoring/pgadmin"
+          # This template writes ONLY the raw password to the file /vault/secrets/password
+          vault.hashicorp.com/agent-inject-template-password: |
+            {{- with secret "secret/data/monitoring/pgadmin" -}}
+            {{ .Data.data.password }}
+            {{- end -}}
+
+      # 4. Use a simpler startup command
+      - op: add
+        path: /spec/template/spec/containers/0/command
+        value:
+          - "/bin/sh"
+          - "-c"
+          - |
+            echo "Waiting for Vault..."
+            while [ ! -f /vault/secrets/password ]; do sleep 1; done
+            
+            # Read the raw password directly from the file
+            export PGADMIN_DEFAULT_PASSWORD=$(cat /vault/secrets/password)
+            export PGADMIN_DEFAULT_EMAIL="chart@domain.com"
+            
+            echo "Secrets loaded. Starting pgAdmin..."
+            exec /entrypoint.sh
+
+  # 5. Ensure the helm-generated secret is deleted
+  - target:
+      kind: Secret
+      name: lhw-data-analysis-pgadmin4
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: lhw-data-analysis-pgadmin4
