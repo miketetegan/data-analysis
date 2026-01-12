@@ -8,7 +8,7 @@ helmCharts:
   - name: grafana
     releaseName: lhw-data-analysis
     repo: https://grafana.github.io/helm-charts
-    version: 8.5.12
+    version: 10.5.0
     namespace: monitoring-prod
     includeCRDs: true
     valuesFile: values-prod.yaml
