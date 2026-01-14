@@ -6,6 +6,13 @@ namespace: monitoring-prod
 
 patches:
   - target:
+      kind: ServiceAccount
+      name: lhw-mariadb-sa
+    patch: |-
+      - op: replace
+        path: /automountServiceAccountToken
+        value: true
+  - target:
       kind: StatefulSet
       name: maria-mariadb-galera
     patch: |-
