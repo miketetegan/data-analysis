@@ -243,22 +243,7 @@ updateStrategy:
 podLabels: {}
 
 # --- VAULT AGENT ANNOTATIONS ---
-podAnnotations:
-  vault.hashicorp.com/agent-inject: "true"
-  vault.hashicorp.com/role: "mariadb-galera-role"
-  vault.hashicorp.com/agent-run-as-user: "1001"
-  # Template for Root Password
-  vault.hashicorp.com/agent-inject-secret-mariadb-root-password: "secret/data/mariadb"
-  vault.hashicorp.com/agent-inject-template-mariadb-root-password: |
-    {{- with secret "secret/data/mariadb" -}}{{ .Data.data.root_password }}{{- end -}}
-  # Template for App User Password
-  vault.hashicorp.com/agent-inject-secret-mariadb-password: "secret/data/mariadb"
-  vault.hashicorp.com/agent-inject-template-mariadb-password: |
-    {{- with secret "secret/data/mariadb" -}}{{ .Data.data.password }}{{- end -}}
-  # Template for Galera Backup Password
-  vault.hashicorp.com/agent-inject-secret-mariadb-galera-mariabackup-password: "secret/data/mariadb"
-  vault.hashicorp.com/agent-inject-template-mariadb-galera-mariabackup-password: |
-    {{- with secret "secret/data/mariadb" -}}{{ .Data.data.backup_password }}{{- end -}}
+podAnnotations: {}
 
 podAffinityPreset: ""
 podAntiAffinityPreset: soft
