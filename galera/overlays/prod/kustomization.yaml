@@ -44,28 +44,29 @@ patches:
       - op: add
         path: /spec/template/metadata/annotations/vault.hashicorp.com~1agent-inject-template-mariadb-root-password
         value: |
-          {{- with secret "secret/data/prod/mariadb" -}}
+          {{- with secret "secret/data/mariadb" -}}
           {{ .Data.data.root_password }}
           {{- end -}}
       
       # App Password Template
       - op: add
         path: /spec/template/metadata/annotations/vault.hashicorp.com~1agent-inject-secret-mariadb-password
-        value: "secret/data/prod/mariadb"
+        value: "secret/data/mariadb"
       - op: add
         path: /spec/template/metadata/annotations/vault.hashicorp.com~1agent-inject-template-mariadb-password
         value: |
-          {{- with secret "secret/data/prod/mariadb" -}}
+          {{- with secret "secret/data/mariadb" -}}
           {{ .Data.data.password }}
           {{- end -}}
       
       # Backup Password Template
       - op: add
         path: /spec/template/metadata/annotations/vault.hashicorp.com~1agent-inject-secret-mariadb-galera-mariabackup-password
-        value: "secret/data/prod/mariadb"
+        value: "secret/data/mariadb"
       - op: add
         path: /spec/template/metadata/annotations/vault.hashicorp.com~1agent-inject-template-mariadb-galera-mariabackup-password
         value: |
-          {{- with secret "secret/data/prod/mariadb" -}}
+          {{- with secret "secret/data/mariadb" -}}
           {{ .Data.data.backup_password }}
           {{- end -}}
+  
