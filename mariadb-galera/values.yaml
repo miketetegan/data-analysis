@@ -11,6 +11,7 @@
 ## @param global.defaultStorageClass Global default StorageClass for Persistent Volume(s)
 ## @param global.storageClass DEPRECATED: use global.defaultStorageClass instead
 ##
+fullNameOverride: lhw-mariadb
 global:
   imageRegistry: ""
   ## E.g.
